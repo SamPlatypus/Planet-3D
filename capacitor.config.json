@@ -1,0 +1,18 @@
+{
+  "appId": "com.samplatypus.planet3d",
+  "appName": "Planet 3D",
+  "webDir": "dist",
+  "backgroundColor": "#04050c",
+  "android": {
+    "backgroundColor": "#04050c",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

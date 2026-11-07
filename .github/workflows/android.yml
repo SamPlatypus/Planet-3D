@@ -1,0 +1,75 @@
+# Builds the Android app with Capacitor + Gradle.
+# Every run uploads a debug APK you can sideload. If the signing secrets
+# PLANET3D_KEYSTORE_BASE64, PLANET3D_KEYSTORE_PASSWORD, PLANET3D_KEY_ALIAS and
+# PLANET3D_KEY_PASSWORD are set, a signed release APK and AAB are built too.
+# Pushing a tag like v1.0.0 attaches the APKs to a GitHub release.
+name: Android
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.PLANET3D_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;35.0.0
+      - run: npm ci
+      - name: Build web assets and sync them into the Android project
+        run: |
+          npm run build
+          npx cap sync android
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Decode release keystore
+        id: keystore
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/planet3d.jks"
+          echo "path=$RUNNER_TEMP/planet3d.jks" >> "$GITHUB_OUTPUT"
+      - name: Assemble signed release APK and bundle
+        if: steps.keystore.outputs.path != ''
+        working-directory: android
+        env:
+          PLANET3D_KEYSTORE: ${{ steps.keystore.outputs.path }}
+          PLANET3D_KEYSTORE_PASSWORD: ${{ secrets.PLANET3D_KEYSTORE_PASSWORD }}
+          PLANET3D_KEY_ALIAS: ${{ secrets.PLANET3D_KEY_ALIAS }}
+          PLANET3D_KEY_PASSWORD: ${{ secrets.PLANET3D_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+      - name: Collect outputs
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/planet-3d-debug.apk
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk out/planet-3d.apk
+            cp android/app/build/outputs/bundle/release/app-release.aab out/planet-3d.aab
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: planet-3d-android
+          path: out/
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
